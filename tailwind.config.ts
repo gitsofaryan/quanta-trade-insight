@@ -1,3 +1,4 @@
+
 import type { Config } from "tailwindcss";
 
 export default {
@@ -61,7 +62,19 @@ export default {
 					'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
 					border: 'hsl(var(--sidebar-border))',
 					ring: 'hsl(var(--sidebar-ring))'
-				}
+				},
+				// Custom colors for the trading app
+				positive: '#2ecc71',
+				negative: '#e74c3c',
+				neutral: '#f1c40f',
+				chartBlue: '#3498db',
+				darkBg: '#121212',
+				darkCard: '#1e1e1e',
+				darkBorder: '#333333',
+				lightText: '#ecf0f1',
+			},
+			fontFamily: {
+				mono: ['Roboto Mono', 'monospace'],
 			},
 			borderRadius: {
 				lg: 'var(--radius)',
@@ -84,11 +97,21 @@ export default {
 					to: {
 						height: '0'
 					}
-				}
+				},
+				'pulse-subtle': {
+					'0%, 100%': { opacity: '1' },
+					'50%': { opacity: '0.8' },
+				},
+				'flash-once': {
+					'0%': { backgroundColor: 'rgba(52, 152, 219, 0.3)' },
+					'100%': { backgroundColor: 'transparent' },
+				},
 			},
 			animation: {
 				'accordion-down': 'accordion-down 0.2s ease-out',
-				'accordion-up': 'accordion-up 0.2s ease-out'
+				'accordion-up': 'accordion-up 0.2s ease-out',
+				'pulse-subtle': 'pulse-subtle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+				'flash-once': 'flash-once 1s ease-out forwards',
 			}
 		}
 	},
