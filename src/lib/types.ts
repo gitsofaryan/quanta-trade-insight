@@ -29,3 +29,13 @@ export interface SimulationResults {
   makerTakerProportion: number;
   internalLatency: number;
 }
+
+export interface TimeSeriesData {
+  timestamp: Date;
+  slippage: number;
+  fees: number;
+  marketImpact: number;
+  netCost: number;
+  bestAsk: number;
+  bestBid: number;
+}
