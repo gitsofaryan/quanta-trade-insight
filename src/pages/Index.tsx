@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import Header from '@/components/Header';
 import InputPanel from '@/components/InputPanel';
@@ -105,7 +104,7 @@ const Index: React.FC = () => {
     
     const onError = (error: Event) => {
       setIsConnected(false);
-      setError('Failed to connect to WebSocket. Please check your connection and VPN if needed.');
+      setError('Connection failed. Please check your network connection and VPN settings. Attempting to reconnect...');
     };
     
     const ws = new OrderBookWebSocket(wsUrl, onMessage, onConnect, onError);
