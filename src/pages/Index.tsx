@@ -17,7 +17,7 @@ import { AlertCircle } from 'lucide-react';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
-const Index = () => {
+const Index: React.FC = () => {
   const [orderBookData, setOrderBookData] = useState<OrderBookData | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [lastUpdated, setLastUpdated] = useState('');
@@ -228,7 +228,7 @@ const Index = () => {
 };
 
 // C++ Implementation Component
-const CppImplementation = () => {
+const CppImplementation: React.FC = () => {
   return (
     <div className="space-y-6">
       <div>
