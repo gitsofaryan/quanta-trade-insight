@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import Header from '@/components/Header';
 import InputPanel from '@/components/InputPanel';
@@ -183,6 +184,7 @@ const Index: React.FC = () => {
                 results={results}
                 lastUpdated={lastUpdated}
                 isConnected={isConnected}
+                orderBookData={orderBookData}
               />
             </div>
           </ResizablePanel>

@@ -1,22 +1,27 @@
 
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { SimulationResults } from '@/lib/types';
+import { SimulationResults, OrderBookData } from '@/lib/types';
 import { Progress } from '@/components/ui/progress';
-import { ArrowUpCircle, ArrowDownCircle, Clock } from 'lucide-react';
+import { ArrowUpCircle, ArrowDownCircle, Clock, BarChart } from 'lucide-react';
+import { Toggle } from '@/components/ui/toggle';
+import OrderBook from './OrderBook';
 
 interface OutputPanelProps {
   results: SimulationResults;
   lastUpdated: string;
   isConnected: boolean;
+  orderBookData?: OrderBookData | null;
 }
 
 const OutputPanel: React.FC<OutputPanelProps> = ({ 
   results, 
   lastUpdated,
-  isConnected
+  isConnected,
+  orderBookData
 }) => {
   const [flashState, setFlashState] = useState<Record<string, boolean>>({});
+  const [showOrderBook, setShowOrderBook] = useState<boolean>(true);
   
   useEffect(() => {
     // Create flash effect when values update
@@ -133,6 +138,25 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
             </div>
           </div>
         </div>
+        
+        <div className="flex items-center justify-between border-t border-darkBorder pt-4 mt-6">
+          <div className="text-sm font-medium">Order Book</div>
+          <Toggle 
+            pressed={showOrderBook} 
+            onPressedChange={setShowOrderBook}
+            aria-label="Toggle Order Book"
+            size="sm"
+          >
+            <BarChart className="h-4 w-4 mr-1" />
+            {showOrderBook ? 'Hide' : 'Show'} Order Book
+          </Toggle>
+        </div>
+        
+        {showOrderBook && orderBookData && (
+          <div className="border-t border-darkBorder pt-4">
+            <OrderBook data={orderBookData} />
+          </div>
+        )}
         
         <div className="text-xs text-right text-muted-foreground">
           Last updated: {lastUpdated || "Never"}
