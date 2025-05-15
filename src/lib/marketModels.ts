@@ -1,13 +1,19 @@
-
 import { Decimal } from 'decimal.js';
 import { OrderBookData } from './types';
 import { calculateMarketMetrics, calculateVWAP, calculatePriceImpact } from './marketMetrics';
 
 Decimal.set({ precision: 20 });
 
-// Fee rates for OKX perpetual swaps
+// Fee rates for OKX USDT pairs spot trading
 const feeRates: Record<string, { maker: number, taker: number }> = {
-  "VIP 0": { maker: 0.0008, taker: 0.0010 },
+  // Regular users
+  "Lvl 1": { maker: 0.0008, taker: 0.0010 },
+  "Lvl 2": { maker: 0.00075, taker: 0.0009 },
+  "Lvl 3": { maker: 0.0007, taker: 0.0008 },
+  "Lvl 4": { maker: 0.00065, taker: 0.0007 },
+  "Lvl 5": { maker: 0.0006, taker: 0.0006 },
+  // VIP users
+  "VIP 0": { maker: 0.0008, taker: 0.0010 }, // Kept for backward compatibility
   "VIP 1": { maker: 0.00045, taker: 0.0005 },
   "VIP 2": { maker: 0.0004, taker: 0.00045 },
   "VIP 3": { maker: 0.0003, taker: 0.0004 },
@@ -64,16 +70,23 @@ export function calculateSlippage(orderBook: OrderBookData, quantity: number): n
  * @param feeTier Exchange fee tier
  * @param quantity Order quantity in quote currency
  * @param price Current market price
+ * @param makerTakerProportion Maker proportion (0-1), used to calculate effective fee rate
  * @returns Calculated fees in quote currency
  */
-export function calculateFees(feeTier: string, quantity: number, price: number): number {
+export function calculateFees(
+  feeTier: string, 
+  quantity: number, 
+  price: number,
+  makerTakerProportion: number = 0
+): number {
   // Use the actual OKX fee schedule
   const tierRates = feeRates[feeTier] || feeRates["VIP 0"];
   
-  // For market orders, we use the taker rate
-  const feeRate = tierRates.taker;
+  // Calculate effective fee rate based on maker/taker proportion
+  const effectiveFeeRate = (makerTakerProportion * tierRates.maker) + 
+                           ((1 - makerTakerProportion) * tierRates.taker);
   
-  return quantity * feeRate;
+  return quantity * effectiveFeeRate;
 }
 
 /**
