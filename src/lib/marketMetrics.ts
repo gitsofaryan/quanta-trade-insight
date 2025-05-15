@@ -1,8 +1,14 @@
+
 import { Decimal } from 'decimal.js';
 import { OrderBookData, MarketMetrics } from './types';
 
 Decimal.set({ precision: 20 });
 
+/**
+ * Calculates key market metrics from order book data
+ * @param orderBook Current order book state
+ * @returns Object containing spread, depth, imbalance, and volatility metrics
+ */
 export function calculateMarketMetrics(orderBook: OrderBookData): MarketMetrics {
   if (!orderBook?.asks?.[0] || !orderBook?.bids?.[0]) {
     return {
@@ -17,9 +23,9 @@ export function calculateMarketMetrics(orderBook: OrderBookData): MarketMetrics 
   const bestAsk = new Decimal(orderBook.asks[0][0]);
   const bestBid = new Decimal(orderBook.bids[0][0]);
   const spread = bestAsk.minus(bestBid);
+  const midPrice = bestAsk.plus(bestBid).div(2);
   
   // Calculate market depth (sum of volumes within 2% of mid price)
-  const midPrice = bestAsk.plus(bestBid).div(2);
   const depthThreshold = midPrice.mul('0.02'); // 2% threshold
   
   let bidDepth = new Decimal(0);
@@ -42,9 +48,10 @@ export function calculateMarketMetrics(orderBook: OrderBookData): MarketMetrics 
   const depth = bidDepth.plus(askDepth);
   
   // Calculate order book imbalance
-  const imbalance = bidDepth.minus(askDepth).div(depth);
+  const imbalance = depth.isZero() ? new Decimal(0) : bidDepth.minus(askDepth).div(depth);
   
   // Calculate short-term volatility estimate
+  // We use spread as a proxy for short-term volatility
   const volatility = spread.div(midPrice).mul('100');
 
   return {
@@ -55,6 +62,12 @@ export function calculateMarketMetrics(orderBook: OrderBookData): MarketMetrics 
   };
 }
 
+/**
+ * Calculates Volume-Weighted Average Price for one side of the order book
+ * @param orderBook Current order book state
+ * @param side Which side of the book to calculate VWAP for ('bids' or 'asks')
+ * @returns Calculated VWAP as a Decimal
+ */
 export function calculateVWAP(orderBook: OrderBookData, side: 'bids' | 'asks'): Decimal {
   if (!orderBook?.[side] || orderBook[side].length === 0) {
     return new Decimal(0);
@@ -74,6 +87,13 @@ export function calculateVWAP(orderBook: OrderBookData, side: 'bids' | 'asks'): 
   return totalVolume.isZero() ? new Decimal(0) : weightedSum.div(totalVolume);
 }
 
+/**
+ * Calculates price impact for an order of specified quantity
+ * @param orderBook Current order book state
+ * @param quantity Order quantity in base currency
+ * @param side 'buy' or 'sell'
+ * @returns Price impact as a percentage
+ */
 export function calculatePriceImpact(
   orderBook: OrderBookData,
   quantity: number,
@@ -100,13 +120,24 @@ export function calculatePriceImpact(
   }
 
   if (remainingQty.gt(0)) {
-    return new Decimal(Infinity);
+    // Not enough liquidity in the order book to fill the order
+    return new Decimal(100); // Maximum impact (100%)
   }
 
   const avgPrice = totalCost.div(quantity);
-  return avgPrice.minus(basePrice).div(basePrice).mul(100);
+  const impact = side === 'buy' 
+    ? avgPrice.minus(basePrice).div(basePrice).mul(100) // For buys, impact is positive
+    : basePrice.minus(avgPrice).div(basePrice).mul(100); // For sells, impact is positive when price decreases
+  
+  return impact;
 }
 
+/**
+ * Estimates market volatility based on recent price history
+ * @param timeSeriesData Array of price data points
+ * @param window Window size for rolling volatility calculation
+ * @returns Annualized volatility as a percentage
+ */
 export function estimateVolatility(timeSeriesData: { price: number }[], window: number = 20): number {
   if (timeSeriesData.length < 2) return 0;
 

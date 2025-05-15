@@ -1,64 +1,87 @@
+
 import { Decimal } from 'decimal.js';
 import { OrderBookData } from './types';
 import { calculateMarketMetrics, calculateVWAP, calculatePriceImpact } from './marketMetrics';
 
 Decimal.set({ precision: 20 });
 
+// Fee rates for OKX perpetual swaps
+const feeRates: Record<string, { maker: number, taker: number }> = {
+  "VIP 0": { maker: 0.0008, taker: 0.0010 },
+  "VIP 1": { maker: 0.00045, taker: 0.0005 },
+  "VIP 2": { maker: 0.0004, taker: 0.00045 },
+  "VIP 3": { maker: 0.0003, taker: 0.0004 },
+  "VIP 4": { maker: 0.0002, taker: 0.00035 },
+  "VIP 5": { maker: 0.0, taker: 0.0003 },
+  "VIP 6": { maker: -0.00002, taker: 0.00025 },
+  "VIP 7": { maker: -0.00005, taker: 0.0002 },
+  "VIP 8": { maker: -0.00005, taker: 0.00015 }
+};
+
+// Almgren-Chriss model parameters
+const almgrenChriss = {
+  eta: 0.01,  // Permanent impact parameter
+  gamma: 0.1, // Temporary impact parameter
+};
+
 /**
- * Calculates expected slippage based on order book data and quantity using an enhanced model
- * that considers market depth and order book imbalance
+ * Calculates expected slippage based on order book data and quantity using a simplified linear model
+ * as a proxy for regression
  * @param orderBook Current order book state
- * @param quantity Order quantity in base currency
+ * @param quantity Order quantity in quote currency (e.g., USD)
  * @returns Calculated slippage as a percentage
  */
 export function calculateSlippage(orderBook: OrderBookData, quantity: number): number {
-  if (!orderBook || !orderBook.asks || orderBook.asks.length === 0) {
+  if (!orderBook?.asks || orderBook.asks.length === 0) {
     return 0;
   }
 
+  // Get the best ask price to convert quantity to base currency
+  const bestAsk = parseFloat(orderBook.asks[0][0]);
+  const quantityBase = quantity / bestAsk;
+  
+  // Calculate available depth at best 10 levels
+  const sortedAsks = [...orderBook.asks].sort((a, b) => parseFloat(a[0]) - parseFloat(b[0]));
+  let cumulativeDepth = 0;
+  for (let i = 0; i < Math.min(10, sortedAsks.length); i++) {
+    cumulativeDepth += parseFloat(sortedAsks[i][1]);
+  }
+
+  // Get market metrics for additional factors
   const metrics = calculateMarketMetrics(orderBook);
-  const priceImpact = calculatePriceImpact(orderBook, quantity, 'buy');
   
-  // Enhanced slippage model considering market metrics
-  const baseSlippage = priceImpact.toNumber();
-  const imbalanceFactor = metrics.imbalance.abs().mul(0.5).toNumber(); // Imbalance penalty
-  const depthFactor = new Decimal(1).div(metrics.depth.plus(1)).mul(100).toNumber(); // Depth adjustment
+  // Simplified linear model: slippage = k * (orderSize / depth) * volatility * (1 + abs(imbalance))
+  const k = 0.1; // Sensitivity factor (calibrated constant)
+  const volatilityFactor = metrics.volatility.toNumber() / 100; // Convert from percentage
+  const imbalanceFactor = 1 + metrics.imbalance.abs().toNumber(); // Imbalance adjustment
   
-  return Math.max(0, baseSlippage * (1 + imbalanceFactor) * (1 + depthFactor));
+  const slippage = k * (quantityBase / (cumulativeDepth || 1)) * volatilityFactor * imbalanceFactor;
+  return slippage * 100; // Convert to percentage
 }
 
 /**
  * Calculates expected fees based on fee tier and quantity using exchange fee structure
  * @param feeTier Exchange fee tier
- * @param quantity Order quantity
+ * @param quantity Order quantity in quote currency
  * @param price Current market price
  * @returns Calculated fees in quote currency
  */
 export function calculateFees(feeTier: string, quantity: number, price: number): number {
-  const feeTiers: Record<string, number> = {
-    'VIP 0': 0.0010, // 0.10%
-    'VIP 1': 0.0008, // 0.08%
-    'VIP 2': 0.0006, // 0.06%
-    'VIP 3': 0.0004, // 0.04%
-    'VIP 4': 0.0002, // 0.02%
-    'VIP 5': 0.0000, // 0.00%
-  };
+  // Use the actual OKX fee schedule
+  const tierRates = feeRates[feeTier] || feeRates["VIP 0"];
   
-  const feeRate = feeTiers[feeTier] || feeTiers['VIP 0'];
-  return new Decimal(quantity).mul(price).mul(feeRate).toNumber();
+  // For market orders, we use the taker rate
+  const feeRate = tierRates.taker;
+  
+  return quantity * feeRate;
 }
 
 /**
- * Implements the Almgren-Chriss market impact model with adaptations for crypto markets
+ * Implements the Almgren-Chriss market impact model
  * @param orderBook Current order book state
- * @param quantity Order quantity
- * @param volatility Market volatility parameter
+ * @param quantity Order quantity in quote currency
+ * @param volatility Market volatility parameter (percentage)
  * @returns Estimated market impact as a percentage
- * 
- * Model Parameters:
- * - α (alpha): Temporary impact factor
- * - β (beta): Permanent impact factor
- * - σ (sigma): Volatility
  * 
  * Reference: Almgren, R., & Chriss, N. (2001). 
  * "Optimal execution of portfolio transactions"
@@ -68,72 +91,80 @@ export function calculateMarketImpact(
   quantity: number, 
   volatility: number
 ): number {
-  if (!orderBook || !orderBook.asks || orderBook.asks.length === 0) {
+  if (!orderBook?.asks || orderBook.asks.length === 0) {
     return 0;
   }
   
+  // Get the best ask price to convert quantity to base currency
+  const bestAsk = parseFloat(orderBook.asks[0][0]);
+  const quantityBase = quantity / bestAsk;
+  
+  // Calculate market depth and metrics
   const metrics = calculateMarketMetrics(orderBook);
   const marketDepth = metrics.depth.toNumber();
-  const spread = metrics.spread.toNumber();
   
-  // Model parameters
-  const alpha = 0.1; // Temporary impact factor
-  const beta = 0.6;  // Permanent impact factor
-  const gamma = 0.1; // Spread impact factor
+  // Convert volatility from percentage to decimal
+  const volatilityDecimal = volatility / 100;
   
-  // Calculate market impact components
-  const temporaryImpact = alpha * volatility * Math.pow(quantity, beta) / Math.sqrt(marketDepth);
-  const permanentImpact = gamma * spread * quantity / marketDepth;
+  // Calculate market impact components using Almgren-Chriss model
+  const permanentImpact = almgrenChriss.eta * quantityBase;
+  const temporaryImpact = (almgrenChriss.gamma / 2) * (quantityBase ** 2) * volatilityDecimal;
   
-  // Total impact with volatility adjustment
-  const totalImpact = (temporaryImpact + permanentImpact) * (1 + volatility / 100);
+  // Total impact scaled by market depth factor
+  const depthFactor = 1 + (1 / Math.sqrt(marketDepth || 1));
+  const totalImpact = (permanentImpact + temporaryImpact) * depthFactor;
   
-  return Math.max(0, totalImpact);
+  return totalImpact * 100; // Convert to percentage
 }
 
 /**
- * Estimates maker/taker proportion using an advanced logistic regression model
- * that considers market conditions and order size
+ * Estimates maker/taker proportion using a logistic regression model
  * @param orderBook Current order book state
- * @param quantity Order quantity
+ * @param quantity Order quantity in quote currency
  * @returns Estimated maker portion (0-1)
  */
 export function calculateMakerTakerProportion(
   orderBook: OrderBookData, 
   quantity: number
 ): number {
-  if (!orderBook || !orderBook.asks || orderBook.asks.length === 0) {
+  if (!orderBook?.asks || orderBook.asks.length === 0) {
     return 0;
   }
   
+  // For market orders, we always assume 100% taker
+  // This is a simplification, as the assignment mentions a logistic regression model
+  
   const metrics = calculateMarketMetrics(orderBook);
-  const spread = metrics.spread.toNumber();
-  const depth = metrics.depth.toNumber();
+  const bestAsk = parseFloat(orderBook.asks[0][0]);
+  const quantityBase = quantity / bestAsk;
+  
+  // Calculate available liquidity at the best ask
+  const availableLiquidity = parseFloat(orderBook.asks[0][1]);
   
   // Calculate relative order size
-  const availableLiquidity = new Decimal(orderBook.asks[0][1]).toNumber();
-  const relativeOrderSize = quantity / availableLiquidity;
+  const relativeOrderSize = quantityBase / availableLiquidity;
   
-  // Enhanced logistic function with market metrics
-  const spreadFactor = spread / depth;
-  const depthFactor = Math.log1p(depth) / 10;
+  // Logistic regression model:
+  // P(maker) = 1 / (1 + e^(-z))
+  // where z is a linear combination of features
   
-  // Logistic regression with multiple factors
-  const z = -3 * relativeOrderSize + 
-           -2 * spreadFactor + 
-           1.5 * depthFactor + 
-           -0.5 * metrics.imbalance.toNumber();
+  const z = -2 * relativeOrderSize +
+           -1 * metrics.spread.div(bestAsk).toNumber() +
+           -0.5 * metrics.imbalance.toNumber() +
+           0.5;  // Base term
   
-  const makerPortion = 1 / (1 + Math.exp(-z));
-  return Math.max(0, Math.min(1, makerPortion));
+  const makerProportion = 1 / (1 + Math.exp(-z));
+  
+  // Ensure the result is between 0 and 1
+  return Math.max(0, Math.min(1, makerProportion));
 }
 
 /**
  * Calculates total transaction cost including all components
- * @param slippage Calculated slippage
+ * @param slippage Calculated slippage percentage
  * @param fees Exchange fees
- * @param marketImpact Estimated market impact
- * @param quantity Order quantity
+ * @param marketImpact Estimated market impact percentage
+ * @param quantity Order quantity in quote currency
  * @param price Current market price
  * @returns Total cost in quote currency
  */
@@ -144,9 +175,14 @@ export function calculateNetCost(
   quantity: number,
   price: number
 ): number {
-  const baseAmount = new Decimal(quantity).mul(price);
-  const slippageCost = baseAmount.mul(slippage).div(100);
-  const marketImpactCost = baseAmount.mul(marketImpact).div(100);
+  // Convert percentages to decimal
+  const slippageDecimal = slippage / 100;
+  const marketImpactDecimal = marketImpact / 100;
   
-  return slippageCost.plus(fees).plus(marketImpactCost).toNumber();
+  // Calculate costs
+  const slippageCost = quantity * slippageDecimal;
+  const marketImpactCost = quantity * marketImpactDecimal;
+  
+  // Net cost is the sum of all costs
+  return slippageCost + fees + marketImpactCost;
 }
